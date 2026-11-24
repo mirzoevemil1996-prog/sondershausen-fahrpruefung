@@ -298,7 +298,8 @@ $('loadStep').textContent='строю дома и дороги';
 await new Promise(r=>setTimeout(r,20));
 const canvas=$('gl');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.75));
+const COARSE=matchMedia('(pointer:coarse)').matches;
+renderer.setPixelRatio(COARSE?1:Math.min(window.devicePixelRatio,1.75));
 const scene=new THREE.Scene();
 const SKY=new THREE.Color('#c9d2da'), FOG=new THREE.Color('#c3ccd3');
 scene.background=SKY; scene.fog=new THREE.Fog(FOG,120,820);
@@ -697,7 +698,12 @@ $('btnView').onclick=()=>setView(VIEWS[(VIEWS.indexOf(sim.view)+1)%VIEWS.length]
 const photo={front:0,want:-1,loading:false,last:0,shownAt:0};
 function photoURL(s){const p=at(route.pts,s);const [la,lo]=toLL(p.ox,p.oy);const a=at(route.pts,Math.max(0,s-6)),b=at(route.pts,s+10);const hdg=((Math.atan2(b.x-a.x,b.y-a.y)*180/Math.PI)+360)%360;
   return 'https://maps.google.com/maps?layer=c&cbll='+la.toFixed(6)+','+lo.toFixed(6)+'&cbp=11,'+hdg.toFixed(0)+',0,0,0&output=svembed&hl=de';}
-function loadPhoto(s){photo.want=s;photo.loading=true;$('phWait').hidden=false;const back=$('ph'+(1-photo.front));
+function savePos(){if(route)store.set('sdh-pos',{w:route.wps.join('.'),s:Math.round(sim.s)});}
+function loadPhoto(s){photo.want=s;photo.loading=true;$('phWait').hidden=false;savePos();
+  if(COARSE){ // phones: one frame only, two Street View frames run out of memory and the browser reloads the page
+    const f=$('ph0');f.classList.add('show');$('ph1').classList.remove('show');photo.front=0;if($('ph1').src)$('ph1').removeAttribute('src');clearTimeout(photo.timer);f.src=photoURL(s);
+    photo.timer=setTimeout(()=>{if(photo.want!==s)return;photo.loading=false;photo.shownAt=performance.now();$('phWait').hidden=true;},3500);return;}
+  const back=$('ph'+(1-photo.front));
   clearTimeout(photo.timer);
   // the panorama draws itself a few seconds after the frame loads and the page cannot see that moment, so swap on a timer
   photo.timer=setTimeout(()=>{if(photo.want!==s)return;back.classList.add('show');$('ph'+photo.front).classList.remove('show');photo.front=1-photo.front;photo.loading=false;photo.shownAt=performance.now();$('phWait').hidden=true;},photo.first?4500:6000);
@@ -903,6 +909,8 @@ const startW=(store.get('sdh-last2'))||SAMPLE;draftWps=startW.slice();
 const first=compileRoute(draftWps);if(first&&!first.error){setRoute(first);}else{draftWps=SAMPLE.slice();setRoute(compileRoute(draftWps));}
 window.addEventListener('pagehide',()=>store.set('sdh-last2',draftWps));setInterval(()=>store.set('sdh-last2',draftWps),5000);
 $('pInfo').textContent=draftWps.length+' точек · '+fmtKm(route.len)+' км';
+{const pos=store.get('sdh-pos');if(pos&&route&&pos.w===route.wps.join('.')&&pos.s>0&&pos.s<route.len-5)seek(pos.s);}
+setInterval(savePos,3000);
 setView('photo');
 $('loading').hidden=true;
 requestAnimationFrame(frame);
