@@ -699,29 +699,31 @@ const photo={front:0,want:-1,loading:false,last:0,shownAt:0};
 function photoURL(s){const p=at(route.pts,s);const [la,lo]=toLL(p.ox,p.oy);const a=at(route.pts,Math.max(0,s-6)),b=at(route.pts,s+10);const hdg=((Math.atan2(b.x-a.x,b.y-a.y)*180/Math.PI)+360)%360;
   return 'https://maps.google.com/maps?layer=c&cbll='+la.toFixed(6)+','+lo.toFixed(6)+'&cbp=11,'+hdg.toFixed(0)+',0,0,0&output=svembed&hl=de';}
 function savePos(){if(route)store.set('sdh-pos',{w:route.wps.join('.'),s:Math.round(sim.s)});}
-function loadPhoto(s){photo.want=s;photo.loading=true;$('phWait').hidden=false;savePos();
+function loadPhoto(s){photo.want=s;photo.loading=true;$('phWait').hidden=false;
+  const wait=photo.first?3000:4500;photo.first=true;clearTimeout(photo.timer);
   if(COARSE){ // phones: one frame only, two Street View frames run out of memory and the browser reloads the page
-    const f=$('ph0');f.classList.add('show');$('ph1').classList.remove('show');photo.front=0;if($('ph1').src)$('ph1').removeAttribute('src');clearTimeout(photo.timer);f.src=photoURL(s);
-    photo.timer=setTimeout(()=>{if(photo.want!==s)return;photo.loading=false;photo.shownAt=performance.now();$('phWait').hidden=true;},3500);return;}
-  const back=$('ph'+(1-photo.front));
-  clearTimeout(photo.timer);
-  // the panorama draws itself a few seconds after the frame loads and the page cannot see that moment, so swap on a timer
-  photo.timer=setTimeout(()=>{if(photo.want!==s)return;back.classList.add('show');$('ph'+photo.front).classList.remove('show');photo.front=1-photo.front;photo.loading=false;photo.shownAt=performance.now();$('phWait').hidden=true;},photo.first?4500:6000);
-  photo.first=true;back.src=photoURL(s);}
+    const f=$('ph0');f.classList.add('show');$('ph1').classList.remove('show');photo.front=0;if($('ph1').src)$('ph1').removeAttribute('src');f.src=photoURL(s);sim.s=s;savePos();
+    photo.timer=setTimeout(()=>{if(photo.want!==s)return;photo.loading=false;$('phWait').hidden=true;},wait);return;}
+  // the next photo loads behind the current one; the panorama draws itself a few seconds after the frame loads
+  // and the page cannot see that moment, so the swap runs on a timer and the position moves at the swap
+  const back=$('ph'+(1-photo.front));back.src=photoURL(s);
+  photo.timer=setTimeout(()=>{if(photo.want!==s)return;back.classList.add('show');$('ph'+photo.front).classList.remove('show');photo.front=1-photo.front;sim.s=s;savePos();photo.loading=false;$('phWait').hidden=true;},wait);}
+const STOP_AT={stop:1,give:1,signals:1,rvl:1,rvlGuess:1,round:1,zebra:1,prio:1,prioLeave:1,minorToMain:1,mainTurn:1,turnOnly:1,rail:1};
 function photoTick(now){
   if(!route)return;
-  if(photo.want!==sim.s&&!photo.loading&&!sim.playing){loadPhoto(sim.s);return;}
-  if(!sim.playing||quizEv||photo.loading)return;
-  if(now-photo.shownAt<1500)return;
-  let next=sim.s+22*sim.mult;
-  const ev=route.events.find(e=>!e.done&&e.type!=='bus'&&e.s>sim.s+4&&e.s<=next+8);
-  if(ev)next=Math.max(sim.s+4,ev.s-9);
+  if(!sim.playing){if(photo.want!==sim.s&&!photo.loading)loadPhoto(sim.s);return;}
+  if(quizEv||photo.loading)return;
+  if(photo.want!==sim.s){loadPhoto(sim.s);return;} // after a jump, show the new place first
+  const step=35*sim.mult;let next=sim.s+step;
+  // pause the photo just before a sign or junction so it is in view, but never crawl in tiny steps
+  const ev=route.events.find(e=>STOP_AT[e.type]&&e.s-12>sim.s+15&&e.s-12<next);
+  if(ev)next=ev.s-12;
   route.events.forEach(e=>{if(e.s<sim.s-2)e.done=true;});
-  const q=sim.exam&&route.events.find(e=>e.q&&!e.asked&&e.s>sim.s&&e.s<=next+12);
+  const q=sim.exam&&route.events.find(e=>e.q&&!e.asked&&e.s>sim.s&&e.s<=next+14);
   if(q){q.asked=true;askQuiz(q);return;}
-  route.events.forEach(e=>{if(!e.spoken&&e.de&&e.s>sim.s&&e.s-sim.s<70){e.spoken=true;speak(e.de);}});
+  route.events.forEach(e=>{if(!e.spoken&&e.de&&e.s>sim.s&&e.s-sim.s<90){e.spoken=true;speak(e.de);}});
   if(next>=route.len-1){next=route.len-1;setPlay(false);}
-  sim.s=next;loadPhoto(next);}
+  loadPhoto(next);}
 $('btnExam').onclick=()=>{sim.exam=!sim.exam;$('btnExam').textContent=sim.exam?'Экзамен: вкл':'Экзамен: выкл';$('btnExam').classList.toggle('on',sim.exam);};
 $('btnVoice').onclick=()=>{sim.voice=!sim.voice;$('btnVoice').classList.toggle('on',sim.voice);};
 document.addEventListener('keydown',e=>{if(!$('planner').hidden||e.target.tagName==='INPUT')return;if(e.code==='Space'){e.preventDefault();$('btnPlay').click();}});
